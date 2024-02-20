@@ -1,0 +1,105 @@
+!pip install transformers
+!pip install torch
+!pip install accelerate -U
+
+import os
+import re
+import pickle
+
+symptoms_list = ["가래", "간염", "결핵", "감기", "고혈압", "구토", "기력", "기침", "당뇨", "독감", "두통", "몸살", "바이러스", "발기", "발열", "피곤함", "붓기", "열", "피로", "한기", "인후통", "복부 팽만감", "부종", "불면", "설사", "식욕", "소화", "심계항진", "불규칙", "유전병", "암", "항암", "유전성 질환", "사고", "알레르기", "피", "통증", "토", "인플루엔자", "흡연", "혈뇨", "호흡 곤란", "종양", "피토", "혈당", "혈변", "체중 변화", "편도선", "변비", "현기증", "혈압", "흉통", "빈혈", "역류", "담낭 절제술", "충격", "벌", "화상", "뺑소니", "타격", "무기력", "식은땀", "이물질", "미친개", "마비", "가려움증", "고열", "얼룩", "만성", "폐쇄성", "폐질환", "폐기종", "위염", "물 토", "상처", "락스", "잔뇨", "간수치", "코피", "정맥류", "입맛", "기흉", "묽은 변", "대상포진", "감전", "수포", "삐끗", "열감", "파열", "뱀", "맹장염", "코로나", "더부룩", "출혈", "황달", "송곳", "우울", "여드름", "덩어리", "섬광", "안색", "무호흡증", "수면", "음영", "감염", "건조", "미열", "똥침", "볼록", "트림", "파상풍", "저릿", "스트레스", "진물", "절뚝", "장애", "착색", "물집", "자궁근종", "경련", "요도", "통풍","가슴 두근거림", "피부 발진", "근육 통증", "근육 경련", "심장박동 이상",  "땀 흘림", "과식", "무력감", "눈물 흘림", "지루함", "소화 불량", "머리 가려움증", "우울증", "불안", "체중 증가", "체중 감소", "손발 저림", "팔다리 무거움", "가슴 통증", "혀가 붓는 느낌", "체온 변화", "코막힘", "소화 문제", "발진", "식욕 부진", "빈뇨", "지침", "눈물", "뒷목 통증", "어지러움", "비만", "손 떨림", "무릎 통증", "허리 통증", "무좀", "목 아픔"]
+
+tag_rules = {symptom: 1 for symptom in symptoms_list}
+sentences = []
+labels = []
+
+for dirpath, dirnames, filenames in os.walk(folder_path):
+    for file_name in filenames:
+        if file_name.endswith('.txt'):
+            file_path = os.path.join(dirpath, file_name)
+            with open(file_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                for line in lines:
+                    word_list = line.split()
+                    tag_list = [tag_rules.get(word, 0) for word in word_list]
+                    sentences.append(line.strip())
+                    labels.append(tag_list)
+
+with open(r"C:\Users\User\voice sample\test\labeling\pickle\sentencestest.pkl", 'wb') as f:
+    pickle.dump(sentences, f)
+
+with open(r"C:\Users\User\voice sample\test\labeling\pickle\labelstest.pkl", 'wb') as f:
+    pickle.dump(labels, f)
+
+!pip install numpy==1.19.5
+
+from transformers import Trainer, TrainingArguments
+import torch
+from torch.utils.data import Dataset, DataLoader
+
+from transformers import BertTokenizer
+tokenizer = BertTokenizer.from_pretrained("monologg/kobert")
+
+import pickle
+sentences_path = 
+
+class CustomDataset(Dataset):
+    def __init__(self, sentences_path, labels_path, tokenizer, max_len):
+        with open(sentences_path, 'rb') as f:
+            self.sentences = pickle.load(f)
+        with open(labels_path, 'rb') as f:
+            self.labels = pickle.load(f)
+        self.tokenizer = tokenizer
+        self.max_len = max_len
+
+    def __len__(self):
+        return len(self.sentences)
+
+    def __getitem__(self, idx):
+        sentence = str(self.sentences[idx])
+        label = self.labels[idx]
+
+        encoding = self.tokenizer.encode_plus(
+            sentence,
+            add_special_tokens=True,
+            max_length=self.max_len,
+            return_token_type_ids=False,
+            padding='max_length',
+            return_attention_mask=True,
+            return_tensors='pt',
+        )
+
+        input_ids = encoding['input_ids'].flatten()
+        attn_mask = encoding['attention_mask'].flatten()
+
+        label = [0] + label +[0]
+
+        label += [0] * (self.max_len - len(label))
+
+        return {
+            'input_ids': input_ids,
+            'attention_mask': attn_mask,
+            'labels': torch.tensor(label, dtype=torch.long)[:self.max_len]
+        }
+
+MAX_LEN = 50
+BATCH_SIZE = 1024
+train_data = CustomDataset(sentences, labels, tokenizer, MAX_LEN)
+train_loader = DataLoader(train_data, batch_size=BATCH_SIZE)
+
+from transformers import BertForTokenClassification, AdamW, BertConfig
+model = BertForTokenClassification.from_pretrained("monologg/kobert", num_labels=3)
+
+training_args = TrainingArguments(
+    output_dir='./results',
+    num_train_epochs=150,
+    per_device_train_batch_size=BATCH_SIZE,
+    logging_dir='./logs',
+)
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_data,
+) 
+
+trainer.train()
